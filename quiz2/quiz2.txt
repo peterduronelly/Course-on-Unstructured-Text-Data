@@ -1,0 +1,24 @@
+1. Explain in your words what the unnest_token function does
+The function takes dataframe which contains text as input, where the text is a string of characters. The function breaks the text into  units of text, the so called 'tokens', which serve as the basis of further analysis. 
+
+2. Explain your words what the gutenbergr package does
+The package is gateway to Project Gutenberg, which stores thousands of pieces of literature, together with its metadata, for which copyright has expired. This text data can be used for various text analysis project. 
+
+3. Explain in your words how sentiment lexicon work
+A sentiment lexicon is a essentially list of tuples. Every tuple consists of a word and a value for the sentiment most frequently related to that word. The value (sentiment indicator) can be binary (eg. sad - happy), of ordinal scale, or it can also be a classification of sentiment (eg. desperate, relieved, joyful, angry, etc.)
+
+4. How does inner_join provide sentiment analysis functionality
+We can use inner-join to find the common set in our unnested tokens and a sentiment lexicon. With this common set we can attribute token frequencies to the various sentiment brackets and assess the overall sentiment of the text.
+
+5. Explain in your words what tf-idf does
+Tdf and idf are essentially token (word) frequency measures. Together they inversely weigh words by their frequency decreasing the wight (importance) of commonly used words. 
+
+6. Explain why you may want to do tokenization by bigram
+Bigrams are pairs of consecutively used units of text, usually words. Bigrams are very useful to create predictive typing algos and to recognize common patterns in texts. 
+
+7. Please install the following packages, if you have not already:
+1. tidyverse
+2. tidytext
+3. gutenbergr
+
+Pick two or more authors that you are familiar with, download their texts using the gutenbergr package, and do a basic analysis of word frequencies and TF-IDF

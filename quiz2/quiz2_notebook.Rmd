@@ -1,0 +1,315 @@
+---
+title: "Tales of Mystery, Imagination, Sea and an Ice Sphinx"
+author: 'Peter Duronelly, id: 169125'
+subtitle: Data Science on Unstructured Data
+output:
+  html_document:
+    df_print: paged
+  html_notebook:
+    df_print: paged
+---
+
+<style>
+body {
+text-align: justify;
+fig.align = 'center';
+font-size: 13px}
+</style>
+<br>
+<br>
+
+'*By the last breath of the four winds that blow*<br>
+*I'll have revenge upon Fortunato*<br>
+*Smile in his face I'll say "come let us go*<br>
+*I've a cask of Amontillado" '*<br>
+<br>
+<br>
+In the next few lines I run a few codes on the works of Edgar Allen Poe and Jack London to perform very basic text analysis exercises. Later I will compare Poe's single novel with a novel by Jules Verne, inspired by Poe's work. 
+
+But first let's see Poe and London. I have chosen, completely arbitrarily, 4-4 works of the two authors. From Poe I have:
+
+* Cask of Amontillado  
+* The Fall of the House Usher 
+* Famous Modern Ghost Stories
+* The Narrative of Arthur Gordon Pym of Nantucket
+
+From Jack London:
+
+* The Call of the Wild (what else?)
+* On the Road
+* South Sea Tales (with The Inevitable White Man in it!)
+* Jerry of the Islands
+
+### A Basic Overview
+
+After downloading the texts I calculated word frequencies in these texts. For instance for Edgar Allen Poe the top frequencies are the following. 
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(tidytext)
+library(gutenbergr)
+library(pander)
+library(scales)
+
+```
+
+```{r, echo=TRUE, message=FALSE, warning=FALSE}
+
+eapoe <- gutenberg_download(c(932, 1063, 15143, 51060), meta_fields = "title")
+jlondon <- gutenberg_download(c(215, 14658, 1208, 1161), meta_fields = "title")
+
+# Calculating word frequencies for Poe
+
+tidy_eapoe <- eapoe %>%
+  unnest_tokens(word, text) %>%
+  anti_join(stop_words)  
+
+df <- tidy_eapoe %>%
+  count(word, sort = TRUE)
+  
+pander(head(df, 10))
+```
+<br>
+
+
+
+As Arthur Gordon Pym was a sea guy, 'water', 'wind' and 'sea' make it to the top 10, beyond 'time' which you can kinda' expect from Poe. (Yes, I excluded The Raven from the list, as I wanted prose only, not poems, to make EAP comparable to Jack London.) the same list for Jack London looks like this. 
+
+```{r, echo=TRUE, message=FALSE, warning=FALSE}
+
+# Calculating word frequencies for London
+
+tidy_jlondon <- jlondon %>%
+  unnest_tokens(word, text) %>%
+  anti_join(stop_words) 
+
+df <- tidy_jlondon %>%
+  count(word, sort = TRUE)
+  
+pander(head(df, 10))
+
+```
+<br>
+'Jerry', 'Buck' and 'dog' are obvious elements in the list, and since the stories of both Jerry and the South Sea Tales take place on the sea and its islands, sea-faring related words also make it to the top ten. 
+
+Visualizing the results brings us to the following graph. 
+
+```{r, echo=TRUE, message=FALSE, warning=FALSE}
+frequency <- bind_rows(mutate(tidy_eapoe, author = "Edgar Allen Poe"),
+                       mutate(tidy_jlondon, author = "Jack London")) %>%
+  mutate(word = str_extract(word, "[a-z']+")) %>%
+  count(author, word) %>%
+  group_by(author) %>%
+  mutate(proportion = n / sum(n)) %>%
+  select(-n) %>%
+  spread(author, proportion) %>%
+  gather(author, proportion, `Jack London`)
+
+
+
+ggplot(frequency, aes(x = proportion, y = `Edgar Allen Poe`, 
+                      color = abs(`Edgar Allen Poe` - proportion))) +
+  geom_abline(color = "gray40", lty = 2) +
+  geom_jitter(alpha = 0.1, size = 2.5, width = 0.3, height = 0.3) +
+  geom_text(aes(label = word), check_overlap = TRUE, vjust = 1.5) +
+  labs(title = "Poe vs London: Who Is Using What") + 
+  scale_x_log10(labels = percent_format()) +
+  scale_y_log10(labels = percent_format()) +
+  scale_color_gradient(limits = c(0, 0.001), low = "darkslategray4", high = "gray75") +
+  labs(y = "Edgar Allen Poe", x = "Jack London") + theme_bw() +
+  theme(legend.position="none")
+
+```
+<br>
+Somewhat not surprisingly, 'time' is a prime word for both writers, but it is unexpected, that out of the commonly used words 'dog' has a relatively high frequency at Poe! What if he had not only written about depressed and crazy people doing weird things but also about dogs?
+
+
+### Frequency Analysis And The Importance Of Words
+
+Next I carried out a simple frequency analysis comparing Poe and London, to find out whether they are different in terms of their Zipf's Law profile. It turns out that both authors follow the regular pattern. As a matter of fact, they look completely the same. 
+
+
+```{r, echo=TRUE, message=FALSE, warning=FALSE}
+tf_eapoe <- eapoe %>%
+  unnest_tokens(word, text) %>%
+  count(word, sort = TRUE) %>%
+  mutate(frequency = n / sum(n)) %>%
+  mutate(rank = row_number()) %>%
+  mutate(author = "Edgar Allen Poe") %>%
+  select(-word, -n)
+
+tf_jlondon <- jlondon %>%
+  unnest_tokens(word, text) %>%
+  count(word, sort = TRUE) %>%
+  mutate(frequency = n / sum(n)) %>%
+  mutate(rank = row_number()) %>%
+  mutate(author = "Jack London") %>%
+  select(-word, -n)
+
+
+
+
+all_freq_by_rank <- merge(tf_eapoe, tf_jlondon, 
+                          all = TRUE) 
+
+all_freq_by_rank %>%
+  ggplot(aes(rank, frequency, linetype = author)) + 
+  geom_line(size = 1.25, show.legend = TRUE) + 
+  scale_x_log10() + scale_y_log10(labels = percent) + 
+  labs(title = "Rank vs Term Frequency at Poe and London", 
+       x = "rank", y = "term frequency") + 
+  theme_bw()
+```
+
+As they are similar in general patterns, what can we say about the relative importance of their words? Which are the 'Poe words' and which are the 'London words'? Here I calculate a tf-idf for the two authors where the number of documents this time equal the number of authors. 
+
+```{r, echo=TRUE, message=FALSE, warning=FALSE}
+idf_eapoe <- eapoe %>%
+  unnest_tokens(word, text) %>%
+  mutate(word = str_extract(word, "[a-z']+")) %>%
+  select(-title, - gutenberg_id) %>%
+  count(word, sort = TRUE) %>%
+  mutate(author = "Edgar Allen Poe") %>%
+  ungroup()
+
+idf_jlondon <- jlondon %>%
+  unnest_tokens(word, text) %>%
+  mutate(word = str_extract(word, "[a-z']+")) %>%
+  select(-title, - gutenberg_id) %>%
+  count(word, sort = TRUE) %>%
+  mutate(author = "Jack London") %>%
+  ungroup()
+
+tf_idf <- merge(idf_eapoe, idf_jlondon, 
+                          all = TRUE) 
+
+total_words <- tf_idf %>% 
+  group_by(author) %>% 
+  summarize(total = sum(n))
+
+tf_idf <- left_join(tf_idf, total_words)
+
+tf_idf <- tf_idf %>%
+  bind_tf_idf(word, author, n)
+
+tf_idf %>%
+  arrange(desc(tf_idf)) %>%
+  mutate(word = factor(word, levels = rev(unique(word)))) %>% 
+  group_by(author) %>% 
+  top_n(20) %>% 
+  ungroup %>%
+  ggplot(aes(word, tf_idf, fill = author)) +
+  geom_col(show.legend = FALSE) +
+  labs(x = NULL, y = "tf-idf") +
+  facet_wrap(~author, ncol = 2, scales = "free") +
+  coord_flip() + 
+  theme_bw() + 
+  labs(title = "tf-idf for Poe and London") + 
+  scale_y_continuous(labels = comma)
+
+```
+<br>
+Words typical for one particular author are the names of characters, such as Augustus, Peters, Jerry and Buck. Poe's main hero in one of the book is Gordon, but since the book is written in first person, Pym's first name is hardly used in the text. 
+
+Jack London has a relatively fewer number of important character names but has a few words typical in the text, such as skipper and fella. The former is the type of boat which was used on the south sea where slave traders were looking for 'niggers' (no 16 among London's important words). 
+
+
+### What Happened To Arthur Gordon Pym?
+
+Poe's classic novel is about a young guy from Nantucket who boards a whaling vessel as a stowaway. His first-person story of his adventures ends abruptly at the most exciting scene. Poe left the story completely open, never wanting to add a solution to the novel's mystery. The book was a major hit and prompted French author Jules Verne to write follow-up novel which offered a possible ending to the adventurous journey of Arthur Gordon Pym. (In Poe's Pym's writing gets somehow to a publisher but he dies before he can turn in the full script. The publisher then decides to publishe the torso diary.) 
+
+Verne's less known novel is the An Antarctic Mystery (Le Sphinx des Glaces), which reveals the ending of Pym's original story. To close the book with a twist, Verne's hero (a wealthy American) actually finds Pym's dead body at the South Pole, by a mysterious ice sphinx which, due to its overwhelming magnetic charge, attracts everything which contains iron components in it. 
+
+Since the two books are basically in the same setting (ships, sea, the Antarctic environment, etc.) I try to identify commonalities between the two books: one will be the tf-idf method, the other is the cosine similarity of the two novels. 
+
+
+```{r, echo=TRUE, message=FALSE, warning=FALSE}
+
+pym <- gutenberg_download(51060, meta_fields = "title")
+sphinx <- gutenberg_download(10339, meta_fields = "title")
+
+idf_pym <- pym %>%
+  unnest_tokens(word, text) %>%
+  mutate(word = str_extract(word, "[a-z']+")) %>%
+  filter(nchar(word) > 1 | (nchar(word) == 1 & word == "a")) %>%
+  select( -gutenberg_id) %>%
+  count(word, sort = TRUE) %>%
+  mutate(title = "Arthur Gordon Pym") %>%
+  ungroup()
+
+
+
+idf_sphinx <- sphinx %>%
+  unnest_tokens(word, text) %>%
+  mutate(word = str_extract(word, "[a-z']+")) %>%
+  filter(word != "i") %>%
+  select(-gutenberg_id) %>%
+  count(word, sort = TRUE) %>%
+  mutate(title = "An Arctic Mystery") %>%
+  ungroup()
+
+tf_idf_pv <- merge(idf_pym, idf_sphinx, 
+                          all = TRUE) 
+
+total_words <- tf_idf_pv %>% 
+  group_by(title) %>% 
+  summarize(total = sum(n))
+
+tf_idf_pv <- left_join(tf_idf_pv, total_words)
+
+tf_idf_pv <- tf_idf_pv %>%
+  bind_tf_idf(word, title, n)
+
+
+
+tf_idf_pv %>%
+  arrange(desc(tf_idf)) %>%
+  mutate(word = factor(word, levels = rev(unique(word)))) %>% 
+  group_by(title) %>% 
+  top_n(20) %>% 
+  ungroup %>%
+  ggplot(aes(word, tf_idf, fill = title)) +
+  geom_col(show.legend = FALSE) +
+  labs(x = NULL, y = "tf-idf") +
+  facet_wrap(~title, ncol = 2, scales = "free") +
+  coord_flip() + 
+  theme_bw() + 
+  labs(title = "tf-idf for Arthur Gordon Pym and the An Arctic Mystery") + 
+  scale_y_continuous(labels = comma)
+
+```
+
+<br> 
+The downloaded Pym-text included a few occurrences from all the of single characters, like 'e' or 'w' which made it to the top of the tf-idf list, so before working with the data I had to get rid of these characters. Also, as Verne's novel is narrated by the main character Jeorling, the word 'I' has far the greatest relative importance, which I also deleted from the world list to have a better comparison of the two novels. 
+
+Names take the first positions, but as the story is taking place close to the Arctic (Jeorling's ship wrecks there) 'iceberg' is also an important word. Contrary to Verne, Poe's important words are less names and shipping/sailing terms, but more 'ordinary' words. It's also worth noting that his use of key words are more balanced. For instance, the 20th word by tf-idf has almost the same score as the 10th, while at Verne this ratio is approximately 1 to 2. We need to consider though, that the An Arctic Mystery was written in French, and the Gutenberg text I downloaded is a translation. 
+
+To go a step further, I tried to measure difference or similarity between the two texts. I used the co-called 'cosine similarity', which measures the angle between two vectors. This time the space where the vectors are located is set by words used in any of the texts, excluding stop words. Each text (novel) is a vector, where the coordinates are the in-text frequencies of the words. The angle between them refers to the 'closeness' of the texts to each other. 
+
+In order to calculate the vector coordinates I cleaned the texts for stop words, calculated word frequencies, full_joined the tables (here is an example which calls for a full-join!) and replaced NAs (words that are present in one text but are missing from the other) with zeros. A simple calculation results in the cosine value. 
+
+```{r, echo=TRUE, message=FALSE, warning=FALSE}
+cosine_pym <- idf_pym %>%
+  anti_join(stop_words) %>%
+  filter(is.na(word) == FALSE) %>%
+  mutate(freq_pym = n / sum(n))
+
+cosine_sphinx <- idf_sphinx %>%
+  anti_join(stop_words) %>%
+  filter(is.na(word) == FALSE) %>%
+  mutate(freq_sphinx = n / sum(n))
+
+cosine <- full_join(cosine_pym, cosine_sphinx, by = "word") %>%
+  mutate(freq_pym = ifelse(is.na(freq_pym), 0, freq_pym)) %>%
+  mutate(freq_sphinx = ifelse(is.na(freq_sphinx), 0, freq_sphinx)) 
+
+P <- cosine$freq_pym
+A <- cosine$freq_sphinx
+
+cosine_similarity <- sum(P*A)/sqrt(sum(P^2)*sum(A^2))
+
+c <- data.frame(cosine_similarity)
+
+pander(c)
+```
+<br>
+A cosine similarity of 0.51 means the two texts form an angle of 60 degrees in the word space. Whether it is a lot or not can be a good research question for my final project. 
