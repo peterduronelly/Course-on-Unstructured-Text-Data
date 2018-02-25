@@ -1,0 +1,244 @@
+---
+title: "Profiling Twitter Messages"
+author: 'Peter Duronelly, id: 169125'
+subtitle: Data Science on Unstructured Data
+output:
+  html_document:
+    df_print: paged
+  html_notebook:
+    df_print: paged
+---
+
+<style>
+body {
+text-align: justify;
+fig.align = 'center';
+font-size: 13px}
+</style>
+<br>
+<br>
+
+### 1. In your own words, describe LDA
+
+LDA, or 'latent Dirichlet allocation', is tool to discover topics, sometimes with an abstraction, in a document or in a set of documents. The method is based on the idea that each topic has a set of typical words which are used in documents covering those topics. While individual words do not classifiy documents into sets along possible topics, their combination may give a hint about the content of the document, and thereby its main topic. 
+
+### 2. In your own words, describe the process of a full tidy text analysis
+
+Text analysis is a process to discover certain patterns in text data. The basis for text analysis is the 'token' (a unit of text defined by the analyst): a word, a pair of words, or even a longer sequel of words. Most text analysis methods rely on frequencies of these tokens, and the task of the analyist is to use these frequencies to uncover relationships between texts, assign texts to topics, or identify their possible sentiment. 
+
+### 3. Do a short tidy text analysis where you extract topics, explain why they are good or bad
+
+In the next few lines I download tweets from four professional sportspersons: the retired Bode Miller, who has just spent his last two weeks as a Eurosport expert for the Olympic Winter Games, Lindsey Vonn who just tried (unsuccessfully) to win her second Olympic gold medal, former F1 driver Jenson Button, and American swimmer Katie Ledecky. The reason to pick these four sportsmen is to test how their twitter messages, by their topics, classify. Three topics would be justified by the fact that they represent three unrelated sports: Alpine skiing, motorsports and swimming. The time of the analysis, however, makes the task a little commplicated: the widely televised Olympic Games may pull these people's tweets closer as they would be in a 'normal' time period. 
+
+First I downloaded the four tweet streams and bound them into a single dataframe.
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+appname = ""
+key = ""
+secret = ""
+```
+
+```{r, echo=TRUE, message=FALSE, warning=FALSE}
+library(twitteR)
+library(tidyverse)
+library(tidyr)
+library(tidytext)
+library(pander)
+library(scales)
+library(rtweet)
+library(lubridate)
+library(stringr)
+library(mallet)
+library(topicmodels)
+
+
+#appname = ""
+#key = ""
+#secret = ""
+twitter_token <- create_token(
+  app = appname,
+  consumer_key = key,
+  consumer_secret = secret)
+
+BM <- search_tweets(q = "MillerBode", n = 2000)
+LV <- search_tweets(q = "lindseyvonn", n = 2000)
+KL <- search_tweets(q = "katieledecky", n = 2000)
+JB <- search_tweets(q = "JensonButton", n = 2000)
+
+
+tweets <- bind_rows(BM %>% 
+                      mutate(person = "Bode Miller"),
+                    LV %>% 
+                      mutate(person = "Lindsey Vonn"),
+                    KL %>% 
+                      mutate(person = "Katie Ledecky"),
+                    JB %>% 
+                      mutate(person = "Jenson Button")) %>%
+  mutate(timestamp = ymd_hms(created_at))
+
+```
+
+According to the timelines, Bode Miller is a diligent tweeter while Lindsey Vonn only used her social media account in the past few days only. She probably concentrated to her races and did not want to open up too much to her audience. 
+
+```{r, echo=TRUE, message=FALSE, warning=FALSE}
+
+ggplot(tweets, aes(x = timestamp, fill = person)) +
+  geom_histogram(position = "identity", bins = 500, show.legend = FALSE) +
+  facet_wrap(~person, ncol = 1) + 
+  labs(title = "Tweet timeline") + 
+  theme_bw()
+```
+<br>
+Miller and Vonn are both skiers, and they have quite a lot commonly used words. 'Olympics', 'love' and 'teamusa' are common words on both accounts, but Vonn congratulates more to fellow skiers then Miller. 
+
+```{r, echo=TRUE, message=FALSE, warning=FALSE}
+replace_reg <- "https://t.co/[A-Za-z\\d]+|http://[A-Za-z\\d]+|&amp;|&lt;|&gt;|RT|https"
+unnest_reg <- "([^A-Za-z_\\d#@']|'(?![A-Za-z_\\d#@]))"
+tidy_tweets <- tweets %>% 
+  filter(!str_detect(text, "^RT")) %>%
+  mutate(text = str_replace_all(text, replace_reg, "")) %>%
+  unnest_tokens(word, text) %>%
+  filter(!word %in% stop_words$word,
+         str_detect(word, "[a-z]")) %>%
+  filter(!word %in% c("millerbode", 
+                    "lindseyvonn",
+                    "jensonbutton",
+                    "katieledecky"))
+
+frequency <- tidy_tweets %>% 
+  group_by(person) %>% 
+  count(word, sort = TRUE) %>% 
+  left_join(tidy_tweets %>% 
+              group_by(person) %>% 
+              summarise(total = n())) %>%
+  mutate(freq = n/total) 
+  
+
+frequencies <- frequency %>% 
+  select(person, word, freq) %>% 
+  spread(person, freq) %>%
+  arrange(`Bode Miller`, `Lindsey Vonn`, `Jenson Button`, `Katie Ledecky`) 
+
+
+  
+
+ggplot(frequencies, aes(`Bode Miller`, `Lindsey Vonn`)) +
+  geom_jitter(alpha = 0.1, size = 2.5, width = 0.25, height = 0.25) +
+  geom_text(aes(label = word), check_overlap = TRUE, vjust = 1.5) +
+  scale_x_log10(labels = percent_format()) +
+  scale_y_log10(labels = percent_format()) +
+  geom_abline(color = "darkblue") + 
+  labs(title = "Commonalities between Miller and  Vonn") + 
+  theme_bw()
+
+```
+<br>Jenson Button's and Bode Miller's most common words are 'racing' and 'love', while 'book' shows up more on Jenson Button's account than on Bode Miller's. The American skier is probably too busy with the Olympics to read books...
+
+```{r, echo=TRUE, message=FALSE, warning=FALSE}
+ggplot(frequencies, aes(`Bode Miller`, `Jenson Button`)) +
+  geom_jitter(alpha = 0.1, size = 2.5, width = 0.25, height = 0.25) +
+  geom_text(aes(label = word), check_overlap = TRUE, vjust = 1.5) +
+  scale_x_log10(labels = percent_format()) +
+  scale_y_log10(labels = percent_format()) +
+  geom_abline(color = "darkblue") + 
+  labs(title = "Commonalities between Miller and  Button") + 
+  theme_bw()
+```
+<br> 
+Katie Ledecky is also following the games which, as we'll see it later, kinda'1' messes up our analysis. She seems to like to performance of the Wunderkind ('Wundermädchen') Ester Ledecka: her account mentions the Czech snowborder-skier with the highest frequency.
+
+```{r, echo=TRUE, message=FALSE, warning=FALSE}
+ledecka <- frequency %>%
+  filter(word == 'ledecka') %>%
+  mutate(frequency = round(freq, 5)) %>%
+  select(frequency) 
+
+pander(ledecka)
+
+```
+Since the four people belong to three sport I tried to assign the users to three topics. The most common terms of the individual topics, however, show that the topic 1 and topic 3 have common themes, and the difference between them is that the first is probably more related to Bode Miller and second to Lindsey Vonn. 
+
+```{r, echo=TRUE, message=FALSE, warning=FALSE}
+twitter_dtm <- frequency %>%
+  select(person, word, n) %>%
+  cast_dtm(person, word, n)
+
+twitter_3lda <- LDA(twitter_dtm, k = 3, control = list(seed = 1971))
+
+twitter_topics <- tidy(twitter_3lda, matrix = "beta")
+
+
+top_tweet_terms <- twitter_topics %>%
+  group_by(topic) %>%
+  top_n(10, beta) %>%
+  ungroup %>%
+  arrange(topic, -beta)
+  
+top_tweet_terms %>%
+  mutate(term = reorder(term, beta)) %>%
+  ggplot(aes(term, beta, fill = factor(topic))) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~ topic, scales = "free") +
+  coord_flip() + 
+  labs(title = "Common terms within topics") + 
+  theme_bw()
+  
+```
+<br>
+The gamma probabilities mirror this pattern. Miller and Vonn, contrary to my initial assumptions, belong to different topics: Miller is topic 1, Vonn is topic 3. Interestingly, the swimmer Ledecky belongs to Vonn's topic. 
+
+```{r, echo=TRUE, message=FALSE, warning=FALSE}
+twitter_gamma <- tidy(twitter_3lda, matrix = "gamma")
+
+twitter_gamma %>%
+  mutate(document = reorder(document, gamma * topic)) %>%
+  ggplot(aes(factor(topic), gamma)) +
+  geom_boxplot() +
+  facet_wrap(~ document) + 
+  labs(title = "Gamma probalities of twitter users with 3 topics", 
+       x = "topic") + 
+  theme_bw()
+
+```
+<br>
+As a reality check I also run a two-topic and a four-topic model. In the four-topic case the users are nicely split into four groups. 
+
+```{r, echo=TRUE, message=FALSE, warning=FALSE}
+
+twitter_4lda <- LDA(twitter_dtm, k = 4, control = list(seed = 1971))
+
+twitter_gamma <- tidy(twitter_4lda, matrix = "gamma")
+
+twitter_gamma %>%
+  mutate(document = reorder(document, gamma * topic)) %>%
+  ggplot(aes(factor(topic), gamma)) +
+  geom_boxplot() +
+  facet_wrap(~ document) + 
+  labs(title = "Gamma probalities of twitter users with 4 topics", 
+       x = "topic") + 
+  theme_bw()
+
+```
+<br>
+The two-topic model brought additional suprise: the skiers are still in different topics, with swimmer Katie Ledecky grouping up with Bode Miller and the driver Jenson Button with Lindsey Vonn. 
+
+```{r, echo=TRUE, message=FALSE, warning=FALSE}
+
+twitter_2lda <- LDA(twitter_dtm, k = 2, control = list(seed = 1971))
+
+twitter_gamma <- tidy(twitter_2lda, matrix = "gamma")
+
+twitter_gamma %>%
+  mutate(document = reorder(document, gamma * topic)) %>%
+  ggplot(aes(factor(topic), gamma)) +
+  geom_boxplot() +
+  facet_wrap(~ document) + 
+  labs(title = "Gamma probalities of twitter users with 2 topics", 
+       x = "topic") + 
+  theme_bw()
+
+```
+
+<br>
+**Summary**: The topic modeling exercise based on Twitter feeds grouped four users in somewhat unexpected ways. It looks that just because you have a major thing in common, you can be very different in your tweets. Bode Miller and Lindsey Vonn, for instance, are more different than you would think. 
