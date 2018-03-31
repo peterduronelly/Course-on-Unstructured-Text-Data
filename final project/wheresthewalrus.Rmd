@@ -1,0 +1,434 @@
+---
+title: "Where's The Walrus?"
+author: "Peter Duronelly"
+subtitle: A Quick Look at the Lyrics of The Beatles
+output:
+  html_document:
+    df_print: paged
+  html_notebook:
+    df_print: paged
+---
+
+<style>
+body {
+text-align: justify;
+fig.align = 'center';
+font-size: 13px}
+</style>
+<br>
+<br>
+
+'*Limelight you were all I ever wanted since it all began* <br>
+*Limelight shining on me telling the world who I am*' <br>
+
+<br>
+
+In the next few lines I am analyzing song lyrics, focusing on The Beatles. I compare lyrics of The Beatles albums, analyzing whether the simple text of Please Please Me (lines such as 'You know I love you, I'll always be true') has changed over the course of the group's carrier. I measure similarity of word usage and try to measure text complexity as well. 
+
+Despite its unique carrier The Beatles is not the ultimate source of lyrical beauty. Nevertheless, the group showed a somewhat higher level of sophistication around the end of its carrier, so I also compare their lyrics to that of other performers: the progressive rock band The Alan Parsons Project and Nobel-prize winner Bob Dylan. I use cosine similarity and two modified text complexity measures to compare their lyrics. 
+
+For the project I used the newly developed geniusR package (https://github.com/JosiahParry/geniusR), which downloads lyrics and metadata from the genius.com homepage. This package was of enormous help for the analysis. 
+
+```{r, message=FALSE, warning=FALSE}
+library(geniusR)
+library(tidyverse)
+library(tidytext)
+library(tidyr)
+library(installr)
+library(tibble)
+library(dplyr)
+library(purrr)
+library(stringr)
+library(syllable)
+library(ggplot2)
+library(scales)
+library(gridExtra)
+library(lsa)
+library(rlist)
+library(data.table)
+library(pander)
+```
+
+### A Glance At The Beatles
+
+The group issued 13 albums of 'core catalogue' during its relatively short carrier. The first, Please Please Me, was published in 1963, and the last, Let It Be, in 1970. The group had quite a few extra collections, live recordings and greatest hit compilations (the last one, according to wikipedia, in 2013), but these thirteen albums make up the core of the works of the 4 musicians. 
+
+The Beatles is history now, for which a short analysis cannot really add to. My aim was to use some simple tools to see a particular pattern on the group's carrier. Did the songs get more sophisticated as the memmbers went from their early twenties towards their thirties? Did they move from their simple but powerful origins towards something more mature?
+
+To start I downloaded the text of all songs from these albums, then unnested the rows.
+
+```{r, message=FALSE, warning=FALSE}
+
+albums <-  tibble(
+  artist = 
+    rep("The Beatles", 13),
+  album = c(
+    "Please Please Me", "With The Beatles", "A Hard Day s Night",
+    "Beatles For Sale", "Help", "Rubber Soul",
+    "Revolver", "Sgt Pepper s Lonely Hearts Club Band", "Magical Mystery Tour",
+    "The Beatles The White Album", "Yellow Submarine", "Abbey Road",
+    "Let It Be"
+  )
+)
+
+album_lyrics <- albums %>% 
+  mutate(tracks = map2(artist, album, genius_album))
+
+beatles_lyrics <- album_lyrics %>% 
+  unnest(tracks) 
+
+beatles_albums <- beatles_lyrics %>%
+  distinct(album)
+
+```
+
+As a first look, I checked the per album frequencies of non-stop words across these albums. In order to draw an arch of change, I plotted simple word frequency charts for Please Please Me (1963), Rubber Soul (1965), Magical Mystery Tour (1967) and Let It Be (1970).
+
+```{r, message=FALSE, warning=FALSE}
+
+tidy_beatles <- beatles_lyrics %>%
+  unnest_tokens(word, text) %>%
+  filter(nchar(word)>2)%>%
+  anti_join(stop_words) %>%
+  group_by(album) %>%
+  count(word, sort = TRUE) %>%
+  ungroup()
+
+total_words <- tidy_beatles %>% 
+  group_by(album) %>% 
+  summarize(total = sum(n))
+
+tidy_beatles <- left_join(tidy_beatles, total_words)
+
+tidy_beatles <- tidy_beatles %>%
+  mutate(freq = n / total)
+  
+ppm <- tidy_beatles %>%
+  filter(str_detect(album, "Please"))%>%
+  arrange(desc(freq)) %>%
+  top_n(10)%>%
+  mutate(word = factor(word, levels = rev(unique(word)))) %>% 
+  ggplot(aes(word, freq, fill=I("steelblue3"), col=I("black"))) +
+  geom_col(show.legend = FALSE) +
+  labs(x = NULL, y = "frequency") +
+  coord_flip() + 
+  theme_bw() + 
+  labs(title = "Word frequency in Please Please Me") + 
+  theme(plot.title = element_text(size = rel(1))) +
+  scale_y_continuous(labels = percent)
+
+rub <- tidy_beatles %>%
+  filter(str_detect(album, "Rubber"))%>%
+  arrange(desc(freq)) %>%
+  top_n(10)%>%
+  mutate(word = factor(word, levels = rev(unique(word)))) %>% 
+  ggplot(aes(word, freq, fill=I("steelblue3"), col=I("black"))) +
+  geom_col(show.legend = FALSE) +
+  labs(x = NULL, y = "frequency") +
+  coord_flip() + 
+  theme_bw() + 
+  labs(title = "Word frequency in Rubber Soul") + 
+  theme(plot.title = element_text(size = rel(1))) +
+  scale_y_continuous(labels = percent)
+
+mys <- tidy_beatles %>%
+  filter(str_detect(album, "Mystery"))%>%
+  arrange(desc(freq)) %>%
+  top_n(10)%>%
+  mutate(word = factor(word, levels = rev(unique(word)))) %>% 
+  ggplot(aes(word, freq, fill=I("steelblue3"), col=I("black"))) +
+  geom_col(show.legend = FALSE) +
+  labs(x = NULL, y = "frequency") +
+  coord_flip() + 
+  theme_bw() + 
+  labs(title = "Word frequency in Magical Myster Tour") + 
+  theme(plot.title = element_text(size = rel(1))) +
+  scale_y_continuous(labels = percent)
+
+lib <- tidy_beatles %>%
+  filter(str_detect(album, "Let"))%>%
+  arrange(desc(freq)) %>%
+  top_n(10)%>%
+  mutate(word = factor(word, levels = rev(unique(word)))) %>% 
+  ggplot(aes(word, freq, fill=I("steelblue3"), col=I("black"))) +
+  geom_col(show.legend = FALSE) +
+  labs(x = NULL, y = "frequency") +
+  coord_flip() + 
+  theme_bw() + 
+  labs(title = "Word frequency in Let It Be") + 
+  theme(plot.title = element_text(size = rel(1))) +
+  scale_y_continuous(labels = percent)
+
+grid.arrange(ppm, rub, mys, lib, nrow = 2)
+
+```
+<br>
+Love makes it into the first 10 in three of the albums, leading the pack in Please Please Me and, to my little surprise, Magical Mystery Tour. Interestingly, it is missing from the top 10 in the last album. Of course, per album word frequency depends largely on the songs' topic selection. 'Mother' goes to number 2 in Magical Mystery Tour due to the many repetitions of the line 'Your mother should know' in the song of the same title. 
+
+This simple exercise shows that working with lyrics can be very tricky. Lines are repeated very often, and melody dominates sentence building. As a matter of fact, sentences can only be poorly defined by regular text analysis algorithms, which, as we will see later, makes measuring text complexity somewhat difficult. 
+<br>
+
+### Measuring Similarity Across Core Albums
+
+In order to asses how much the group changed over the course of these seven years I measured the similarity of each album to the very first LP of Please Please Me. More and more sophisticated lyrics would result in larger and larger differences in text, measured by the so-called cosine similarity. 
+
+I calculated cosine similarity based on word frequency vectors, where each album is vector of frequencies of a common set of words from each album. The word list is a product of a full join of all words from the all the albums, and the cosines for each album is a similarity measure between that particular album and the benchmark Please Please Me. This word list excludes stop word, of course. 
+
+```{r, message=F, warning=FALSE}
+cos <- tidy_beatles %>%
+  select(album, word, freq)
+
+cos_w <- spread(cos, key = album, value = freq)
+
+cos_w[is.na(cos_w)] <- 0
+
+cos_w <- cos_w %>%
+  select(-word)
+
+title <- beatles_albums[[1]][1]
+a <- cos_w %>% select(as.character(title))
+
+
+cosines <- data.table(album = character(),
+                      cosines = numeric())
+
+for(i in 2:nrow(beatles_albums)){
+  title1 <- beatles_albums[[1]][i]
+  l <- list(title1)
+  b <- cos_w %>% select(as.character(title1))
+  l <- list.append(l, round(sum(a*b)/sqrt(sum(a^2)*sum(b^2)),3))
+  cosines <- rbind(cosines, l)
+}
+
+cosines <- data.frame(cosines)
+
+cosines <- cosines%>%
+  arrange(desc(cosines))
+
+cosines$album <- factor(cosines$album, levels = cosines$album[order(cosines$cosines)])
+
+ggplot(cosines) + 
+  geom_col(aes(album, cosines, fill=I("steelblue3"), col=I("black")),show.legend = F) +
+  theme_bw() + coord_flip() + 
+  labs(title = "Cosine similarities with Please Please Me", y = "cosine similarity") + 
+  theme(plot.title = element_text(size = rel(1.25))) + 
+  ylim(0,1)
+
+
+```
+<br>
+It is not surprising that 'A Hard Day's Night' is very similar to Please Please Me, but it was interesting to see that the Abbey Road (no. 12) is also quite close to the original set of words from which Lennon, McCartney and Harrison were building their lyrics. Sgt. Pepper's was the most distinct LP of all, at least based on its similarity to the first album. As a matter of fact, it looks to be the most distinct album amongst the core. 
+<br>
+
+### Text Complexity
+
+Next I turned to text complexity. Can we see an arch of change as the group gets older, grows confidence, and starts to have something else to say than 'I love you'? 
+
+There are various measures of text complexity, and all aims to assess the readability of prosaic test. Since these metrics have been developed to prose, applying them to lyrics, which is basically poetry, is not stragihtforward. In songs and poems text serves the melody (rythm), and, for the lack of proper punctuation, standard algorithms cannot detect sentences. The basis of complexity metrics is usually the number of words in a sentence, the lenghts of the words, and the ratio of complex words within all words. These measures are focusing on how the text is built, and they don't filter for stop words, as the use of these stop words is also a sign of sophistication.
+
+In this exercise I use the modified version of two complexity measures. The '**Automated Readability Index**' uses characters, words and sentences so, that
+
+<center>
+ARI = 4.71 x (characters/words) + 0.5 x (words/sentences) - 21.43
+</center>
+
+The '**Gunning Fog**' score is based on words, sentences, and the ratio of complex words:
+
+<center>
+Gunning Fog = 0.4 x ( (words/sentences) + 100 x (complexWords/words) )
+</center>
+
+A word is considered to be complex if it has at least 3 syllables. Higher complexity scores indicate more complicated text. 
+
+Since sentences are loosely defined in lyrics, I replaced them by lines, despite that sentences can be of multiple lines. Lines are the main bulding blocks of song text, so using them as a proxy is a viable option. As the original formulas are 'modified', I denote these measures as mARI and mGunningFog. This way they are probably more imperfect as they originally are, but they do show meaningful patterns in our case. 
+
+In order to calculate these measures for each album I looped through the album titles and selected distinct lines for analysis. The reason for using distinct lines is that in songs lines are many times repeated for the sake of the melody, serving as chorus, and  complete verses can be repated to fill the melody with sufficient amount of text for the vocals. 
+
+For the complexity metrics I used the 'syllable' package, which produces certain text stastics from which these scores can be calculated. The result can be seen in the next chart. 
+
+
+```{r, message=FALSE, warning=FALSE}
+
+text_complexity <- data.table(album = character(),
+                              mGunnigFog = numeric(),
+                              mARI = numeric())
+
+for(i in 1:nrow(beatles_albums)){
+  name <- beatles_albums[[1]][i]
+  l <-  list(name)
+  temp_lyr <- beatles_lyrics %>%
+    filter(album == as.character(name)) %>%
+    distinct(text)
+  rwstat <- readability_word_stats(temp_lyr[,1])
+  l <-  list.append(l, 0.4*(rwstat$n.words/nrow(temp_lyr)) +
+                      100*(rwstat$n.complexes/rwstat$n.words))
+  l <- list.append(l, 5.89*(rwstat$n.chars/rwstat$n.words) -
+                     0.3*(nrow(temp_lyr)/rwstat$n.words) - 15.8)
+  text_complexity <- rbind(text_complexity, l)
+}
+
+ggplot(data = text_complexity, aes(mARI, mGunnigFog)) + 
+  geom_point(color = "darkblue") +
+  geom_text(aes(x = mARI, y = mGunnigFog, label = album), hjust=1, vjust=-0.5) + 
+  theme_bw() + labs(title = "Text complexity of Beatles albums") + 
+  theme(plot.title = element_text(size = rel(1.25)))  +
+  ylim(4,8) + xlim(4,7.5)
+
+
+  
+```
+<br>
+While the two metrics put the albums in slightly different orders, the trend is obvious. The first albums (Please Please Me, A Hard Day's Night, With The Beatles) are of fairly simple text, but later sophistication increases. Let it Be and Abbey Road are in the top 4 by ARI, and Let It Be is the single most complex according to Gunning Fox. It is interesting though that Sgt. Pepper is of relatively high complexity: it is the most complex by ARI and the third most complex by Gunning Fog. Remember, Sgt. Pepper is the most dissimilar album compared to the Please Please Me benchmark by cosine similarity. 
+
+If we look at the publication dates of these albums (not shown here) we do see a development in the group's artistic performance. The last five albums ('Magical Mystery Tour','The Beatles The White Album', 'Yellow Submarine', 'Abbey Road', 'Let It Be') are in the top right corner of the chart, while the first five are in the bottom left, indicating more sophistication in later lyrics. 
+
+In order to put these results into a different perspective, I ran the same comparisons with other artists. 
+<br>
+
+### Comparing The Beatles
+
+To see how The Beatles fares in the music industry, I ran two comparisons: I downloaded lyrics from the progressive rock band 'The Alan Parsons Project' and Nobel-laurate Bob Dylan. Alan Parsons is a music manager and sound engineer-turned-musician, who was one of the engineering architects of The Beatles' Abbey Road album. He later formed an unusual formation consisting of him and his composer partner Eric Wolfson as permanent group members, supplemented by a group of session musicians who played on their albums. Their music was of a more intellectual nature with a more equal focus on lyrics and melody.
+
+Bob Dylan is supposed to be the other end of the spectrum relative to The Beatles with his lyrics-centered music. Comparing The Beatles to these two makes an interesting analysis. As a side note: I was also entertaining the idea to include Iron Maiden in the comparison, but the excessive work of Bruce Dickinson & Co would have made the already long download even longer, so I stayed with my original idea. 
+
+First I did the cosine similarity comparison. According to the cosine matrix Bob Dylan is equally different from The Beatles and The Alan Parsons Project: their cosine is 0.67 and 0.62, respectively. In a two-dimensional space this would be an angle of appproximately 50 degrees. The cosine between Beatles and The Alan Parsons Poject, however, is only 0.41, which is 'equivalent' to a two-dimensional angle of 65 degrees. It looks, that, despite thier partially shared history, The Beatles and Alan Parsons have less in common than any of them with Bob Dylan. 
+
+```{r, message=F, warning=F}
+
+
+
+albums <-  tibble(
+  artist = c(
+    rep("The Beatles", 13),
+    rep("Bob Dylan", 36),
+    rep("The Alan Parsons Project", 10)
+  )
+    ,
+  album = c(
+    "Please Please Me", "With The Beatles", "A Hard Day s Night",
+    "Beatles For Sale", "Help", "Rubber Soul",
+    "Revolver", "Sgt Pepper s Lonely Hearts Club Band", "Magical Mystery Tour",
+    "The Beatles The White Album", "Yellow Submarine", "Abbey Road",
+    "Let It Be",
+    "Bob dylan", "The freewheelin bob dylan", "Another side of bob dylan",
+    "The times they are a changin", "Bringing it all back home", "Highway 61 revisited",
+    "Blonde on blonde", "John wesley harding", "Nashville skyline",
+    "New morning", "Self portrait", "Pat garrett billy the kid",
+    "Triplicate", "Blood on the tracks", "The basement tapes",
+    "Desire", "Street legal", "Slow train coming",
+    "Saved", "Shot of love", "Infidels",
+    "Empire burlesque", "Knocked out loaded", "Down in the groove",
+    "Oh mercy", "Under the red sky", "Good as i been to you",
+    "World gone wrong", "Time out of mind", "Love and theft",
+    "Modern times", "Together through life", "Christmas in the heart",
+    "Tempest", "Shadows in the night", "Fallen angels",
+    "Tales of mystery and imagination edgar allan poe", "I robot", "Pyramid",
+    "Eve", "The turn of a friendly card", "Eye in the sky", 
+    "Ammonia avenue", "Vulture culture", "Stereotomy",
+    "Gaudi"
+  )
+)
+
+all_lyrics <- album_lyrics <- albums %>% 
+  mutate(tracks = map2(artist, album, genius_album))
+
+full_lyrics <- all_lyrics %>% 
+  unnest(tracks) %>%
+  arrange(desc(artist))
+
+
+
+```
+
+```{r, message=F, warning=F}
+tidy_lyrics <- full_lyrics %>%
+  unnest_tokens(word, text) %>%
+  filter(nchar(word)>2)%>%
+  anti_join(stop_words) %>%
+  group_by(artist) %>%
+  count(word, sort = TRUE) %>%
+  ungroup()
+
+total_full_words <- tidy_lyrics %>% 
+  group_by(artist) %>% 
+  summarize(total = sum(n))
+
+tidy_lyrics <- left_join(tidy_lyrics, total_full_words)
+
+tidy_lyrics <- tidy_lyrics %>%
+  mutate(freq = n / total)
+
+full_cos <- tidy_lyrics %>%
+  select(artist, word, freq)
+
+full_cos_w <- spread(full_cos, key = artist, value = freq)
+
+full_cos_w[is.na(full_cos_w)] <- 0
+
+full_cos_w_matrix <- data.matrix(full_cos_w, rownames.force = NA)
+
+full_cos_w_matrix <- full_cos_w_matrix[, -1]
+
+cosine_matrix <- cosine(full_cos_w_matrix)
+
+cm <- data.frame(cosine_matrix)
+
+pander(cm, caption = "Cosine similarity matrix")
+
+```
+
+```{r, echo=F, message=F, warning=F}
+
+```
+<br>
+Next I turned to the text complexity measures. Here I used the core album lists, which had 10 albums for The Alan Parsons Project and 36 (!) for Bob Dylan. Just as in the previous case, stop words are also included in the calculations. 
+
+```{r, message=F, warning=F}
+
+artists <- full_lyrics %>%
+  distinct(artist)
+  
+full_text_complexity <- data.table(artist = character(),
+                              mGunningFog = numeric(),
+                              mARI = numeric())
+
+for(i in 1:nrow(artists)){
+  artista <- artists[[1]][i]
+  l <-  list(artista)
+  temp_lyr <- full_lyrics %>%
+    filter(artist == artista) %>%
+    distinct(text)
+  rwstat <- readability_word_stats(temp_lyr[,1])
+  l <-  list.append(l, 0.4*(rwstat$n.words/nrow(temp_lyr)) +
+                      100*(rwstat$n.complexes/rwstat$n.words))
+  l <- list.append(l, 5.89*(rwstat$n.chars/rwstat$n.words) -
+                     0.3*(nrow(temp_lyr)/rwstat$n.words) - 15.8)
+  full_text_complexity <- rbind(full_text_complexity, l)
+}
+
+ggplot(data = full_text_complexity, aes(mARI, mGunningFog)) + 
+  geom_point(color = "darkblue") +
+  geom_text(aes(x = mARI, y = mGunningFog, label = artist), hjust=1, vjust=-0.5) + 
+  theme_bw() + labs(title = "Text complexity comparison") + 
+  theme(plot.title = element_text(size = rel(1.25)))  +
+  xlim(5.5,7.5) + ylim(5,7)
+  
+
+artista <- artists[[1]][2]
+temp_lyr <- full_lyrics %>%
+    filter(artist == artista) 
+```
+<br>
+The two measures have different rankings for Alan Parsons and Bob Dylan, but both musicians seem to have more sophisticated lyrics **on average** than The Beatles. In terms of their individual works, however, The Beatles have shown similar or higher complexity in their late albums than the others: Abbey Road, Let It Be and Sgt. Pepper meet Bob Dylan or Alan Parsons standards. 
+
+
+<br>
+
+### Summary
+
+In the preceeding short note I tried to provide an insight into the carrier of The Beatles through their lyrics from a text analysis standpoint. In its surprisingly short, but influential carrier the group managed to move from simple lyrics to poetry, comparing with Nobel-prize winner Bob Dylan. It is no wonder than that while groups come and go, there will never be anything more powerful in pop music than **The Beatles**. 
+
+
+
+
+
